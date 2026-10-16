@@ -25,7 +25,7 @@ spec:
 
         - name: backend
 
-          image: akshayd2693/student-task-backend:v1.0.7
+          image: akshayd2693/student-task-backend:v1.0.8
 
           imagePullPolicy: Always
 
