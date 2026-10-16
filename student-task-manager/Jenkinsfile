@@ -5,7 +5,6 @@ pipeline {
         DOCKER_USER = "akshayd2693"
         BACKEND_IMAGE = "akshayd2693/student-task-backend"
         FRONTEND_IMAGE = "akshayd2693/student-task-frontend"
-        IMAGE_TAG = "v1.0.${BUILD_NUMBER}"
         
         // Screenshot ke mutabiq paths student-task-manager ke andar hain
         BACKEND_YAML = "student-task-manager/k8s/backend-deployment.yaml"
@@ -17,6 +16,32 @@ pipeline {
         stage("Checkout") {
             steps {
                 checkout scm
+            }
+        }
+
+        stage("Calculate Next Version") {
+            steps {
+                script {
+                    // Deployment file se current version (e.g., v1.0.19) read karke next version (v1.0.20) banayega
+                    env.IMAGE_TAG = sh(
+                        script: '''
+                            # Frontend YAML se current tag nikalna
+                            CURRENT_TAG=$(grep 'student-task-frontend:' ${FRONTEND_YAML} | awk -F':' '{print $3}' | tr -d ' ' | tr -d '\r')
+                            
+                            # v1.0 aur 19 ko alag karna
+                            BASE_VERSION=$(echo $CURRENT_TAG | cut -d. -f1,2)
+                            PATCH_VERSION=$(echo $CURRENT_TAG | cut -d. -f3)
+                            
+                            # Patch version me 1 add karna
+                            NEXT_PATCH=$((PATCH_VERSION + 1))
+                            
+                            # Naya version print karna jise Jenkins env variable me save kar lega
+                            echo "${BASE_VERSION}.${NEXT_PATCH}"
+                        ''',
+                        returnStdout: true
+                    ).trim()
+                    echo "Next Image Tag will be: ${env.IMAGE_TAG}"
+                }
             }
         }
 
@@ -40,7 +65,6 @@ pipeline {
 
         stage("Build Backend") {
             steps {
-                // Screenshot structure ke mutabiq path
                 sh '''
                     docker build \
                     -t ${BACKEND_IMAGE}:${IMAGE_TAG} \
@@ -52,7 +76,6 @@ pipeline {
 
         stage("Build Frontend") {
             steps {
-                // Screenshot structure ke mutabiq path
                 sh '''
                     docker build \
                     -t ${FRONTEND_IMAGE}:${IMAGE_TAG} \
@@ -106,13 +129,12 @@ pipeline {
 
     post {
         success {
-            echo "Pipeline executed successfully! Images pushed and manifests updated."
+            echo "Pipeline executed successfully! Images pushed and manifests updated to ${env.IMAGE_TAG}."
         }
         failure {
             echo "Pipeline failed! Please check the logs."
         }
         always {
-            // Script block prevents MissingContextVariableException if workspace drops
             script {
                 try {
                     sh 'docker logout || true'
