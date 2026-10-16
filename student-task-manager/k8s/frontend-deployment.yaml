@@ -25,7 +25,7 @@ spec:
 
         - name: frontend
 
-          image: akshayd2693/student-task-frontend:v1.0.35
+          image: akshayd2693/student-task-frontend:v1.0.36
 
           imagePullPolicy: Always
 
