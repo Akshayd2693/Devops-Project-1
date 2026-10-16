@@ -5,12 +5,11 @@ pipeline {
         DOCKER_USER = "akshayd2693"
         BACKEND_IMAGE = "akshayd2693/student-task-backend"
         FRONTEND_IMAGE = "akshayd2693/student-task-frontend"
-        // Dynamically generates v1.0.1, v1.0.2, v1.0.3 based on Jenkins build number
         IMAGE_TAG = "v1.0.${BUILD_NUMBER}"
         
-        // Adjust these paths if your YAML files have different names inside the k8s folder
-        BACKEND_YAML = "k8s/backend-deployment.yaml"
-        FRONTEND_YAML = "k8s/frontend-deployment.yaml"
+        // Screenshot ke mutabiq paths student-task-manager ke andar hain
+        BACKEND_YAML = "student-task-manager/k8s/backend-deployment.yaml"
+        FRONTEND_YAML = "student-task-manager/k8s/frontend-deployment.yaml"
         GIT_BRANCH = "main" 
     }
 
@@ -41,6 +40,7 @@ pipeline {
 
         stage("Build Backend") {
             steps {
+                // Screenshot structure ke mutabiq path
                 sh '''
                     docker build \
                     -t ${BACKEND_IMAGE}:${IMAGE_TAG} \
@@ -52,6 +52,7 @@ pipeline {
 
         stage("Build Frontend") {
             steps {
+                // Screenshot structure ke mutabiq path
                 sh '''
                     docker build \
                     -t ${FRONTEND_IMAGE}:${IMAGE_TAG} \
@@ -76,27 +77,25 @@ pipeline {
             steps {
                 withCredentials([
                     usernamePassword(
-                        credentialsId: "github-credentials", // <-- Update with your GitHub Jenkins Credential ID
+                        credentialsId: "Github-credentials", 
                         usernameVariable: "GIT_USERNAME",
                         passwordVariable: "GIT_TOKEN"
                     )
                 ]) {
                     sh '''
-                        # 1. Replace old version tag with the new IMAGE_TAG in both deployment files
+                        # 1. Update version tag in deployment files
                         sed -i "s|${BACKEND_IMAGE}:.*|${BACKEND_IMAGE}:${IMAGE_TAG}|g" ${BACKEND_YAML}
                         sed -i "s|${FRONTEND_IMAGE}:.*|${FRONTEND_IMAGE}:${IMAGE_TAG}|g" ${FRONTEND_YAML}
 
-                        # 2. Configure Git identity for Jenkins
+                        # 2. Configure Git
                         git config user.name "Jenkins CI"
                         git config user.email "jenkins@ci.local"
 
-                        # 3. Stage and commit the updated YAML files
+                        # 3. Stage and commit
                         git add ${BACKEND_YAML} ${FRONTEND_YAML}
-                        
-                        # [ci skip] prevents Jenkins from triggering an infinite build loop!
                         git commit -m "chore(k8s): bump image versions to ${IMAGE_TAG} [ci skip]" || echo "No changes to commit"
 
-                        # 4. Push changes back to GitHub safely using token
+                        # 4. Push changes back to GitHub
                         REPO_URL=$(git config --get remote.origin.url | sed 's|https://||')
                         git push https://${GIT_USERNAME}:${GIT_TOKEN}@${REPO_URL} HEAD:${GIT_BRANCH}
                     '''
@@ -107,15 +106,20 @@ pipeline {
 
     post {
         success {
-            echo "Docker images (${IMAGE_TAG}) built, pushed, and K8s manifests updated!"
+            echo "Pipeline executed successfully! Images pushed and manifests updated."
         }
-
         failure {
-            echo "Pipeline failed!"
+            echo "Pipeline failed! Please check the logs."
         }
-
         always {
-            sh 'docker logout || true'
+            // Script block prevents MissingContextVariableException if workspace drops
+            script {
+                try {
+                    sh 'docker logout || true'
+                } catch (Exception e) {
+                    echo "Could not execute docker logout: ${e.message}"
+                }
+            }
         }
     }
 }
