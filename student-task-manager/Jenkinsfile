@@ -10,32 +10,49 @@ pipeline {
         BACKEND_YAML = "student-task-manager/k8s/backend-deployment.yaml"
         FRONTEND_YAML = "student-task-manager/k8s/frontend-deployment.yaml"
         GIT_BRANCH = "main" 
+        
+        // Naya variable loop rokne ke liye
+        SKIP_CI = "false" 
     }
 
     stages {
-        stage("Checkout") {
+        stage("Checkout & Check Trigger") {
             steps {
                 checkout scm
+                script {
+                    // Check if the last commit was made automatically by Jenkins
+                    def commitMsg = sh(returnStdout: true, script: 'git log -1 --pretty=%B').trim()
+                    
+                    if (commitMsg.contains('[ci skip]')) {
+                        env.SKIP_CI = "true"
+                        echo "Automated Jenkins commit detected ([ci skip]). Halting further execution to prevent infinite loop."
+                    } else {
+                        env.SKIP_CI = "false"
+                        echo "Manual push detected. Proceeding with the build."
+                    }
+                }
             }
         }
 
         stage("Calculate Next Version") {
+            // Yeh stage tabhi chalega jab SKIP_CI false hoga
+            when { environment name: 'SKIP_CI', value: 'false' }
             steps {
                 script {
-                    // Deployment file se current version (e.g., v1.0.19) read karke next version (v1.0.20) banayega
+                    // Deployment file se current version read karke next version banayega
                     env.IMAGE_TAG = sh(
                         script: '''
                             # Frontend YAML se current tag nikalna
                             CURRENT_TAG=$(grep 'student-task-frontend:' ${FRONTEND_YAML} | awk -F':' '{print $3}' | tr -d ' ' | tr -d '\r')
                             
-                            # v1.0 aur 19 ko alag karna
+                            # v1.0 aur number ko alag karna
                             BASE_VERSION=$(echo $CURRENT_TAG | cut -d. -f1,2)
                             PATCH_VERSION=$(echo $CURRENT_TAG | cut -d. -f3)
                             
                             # Patch version me 1 add karna
                             NEXT_PATCH=$((PATCH_VERSION + 1))
                             
-                            # Naya version print karna jise Jenkins env variable me save kar lega
+                            # Naya version print karna
                             echo "${BASE_VERSION}.${NEXT_PATCH}"
                         ''',
                         returnStdout: true
@@ -46,6 +63,7 @@ pipeline {
         }
 
         stage("Docker Login") {
+            when { environment name: 'SKIP_CI', value: 'false' }
             steps {
                 withCredentials([
                     usernamePassword(
@@ -64,6 +82,7 @@ pipeline {
         }
 
         stage("Build Backend") {
+            when { environment name: 'SKIP_CI', value: 'false' }
             steps {
                 sh '''
                     docker build \
@@ -75,6 +94,7 @@ pipeline {
         }
 
         stage("Build Frontend") {
+            when { environment name: 'SKIP_CI', value: 'false' }
             steps {
                 sh '''
                     docker build \
@@ -86,6 +106,7 @@ pipeline {
         }
 
         stage("Push Images") {
+            when { environment name: 'SKIP_CI', value: 'false' }
             steps {
                 sh '''
                     docker push ${BACKEND_IMAGE}:${IMAGE_TAG}
@@ -97,6 +118,7 @@ pipeline {
         }
 
         stage("Update K8s Manifests & Push to GitHub") {
+            when { environment name: 'SKIP_CI', value: 'false' }
             steps {
                 withCredentials([
                     usernamePassword(
@@ -114,7 +136,7 @@ pipeline {
                         git config user.name "Jenkins CI"
                         git config user.email "jenkins@ci.local"
 
-                        # 3. Stage and commit
+                        # 3. Stage and commit (adding [ci skip] to message)
                         git add ${BACKEND_YAML} ${FRONTEND_YAML}
                         git commit -m "chore(k8s): bump image versions to ${IMAGE_TAG} [ci skip]" || echo "No changes to commit"
 
@@ -129,7 +151,13 @@ pipeline {
 
     post {
         success {
-            echo "Pipeline executed successfully! Images pushed and manifests updated to ${env.IMAGE_TAG}."
+            script {
+                if (env.SKIP_CI == 'false') {
+                    echo "Pipeline executed successfully! Images pushed and manifests updated to ${env.IMAGE_TAG}."
+                } else {
+                    echo "Pipeline skipped automatically to prevent infinite loop (No new changes deployed)."
+                }
+            }
         }
         failure {
             echo "Pipeline failed! Please check the logs."
